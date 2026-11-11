@@ -166,3 +166,57 @@ def test_txt_paragraph_mapping_falls_back_when_count_does_not_match(tmp_path: Pa
         "Second sentence.",
         "Third sentence.",
     ]
+
+
+
+def test_alignment_does_not_accumulate_drift_when_whisper_omits_words() -> None:
+    lines = [
+        "The first scene begins with a quiet morning.",
+        "A traveler walks beside the river.",
+        "At last the traveler reaches the old bridge.",
+    ]
+    recognized = [
+        TimedWord("the", 100_000, 200_000),
+        TimedWord("first", 210_000, 350_000),
+        TimedWord("scene", 360_000, 500_000),
+        TimedWord("begins", 510_000, 700_000),
+        TimedWord("quiet", 800_000, 950_000),
+        TimedWord("morning", 960_000, 1_200_000),
+        # Whisper omitted "with" from Shot 01.
+        TimedWord("a", 2_000_000, 2_100_000),
+        TimedWord("traveler", 2_110_000, 2_400_000),
+        TimedWord("walks", 2_410_000, 2_600_000),
+        # Whisper omitted "beside" from Shot 02.
+        TimedWord("the", 2_800_000, 2_900_000),
+        TimedWord("river", 2_910_000, 3_200_000),
+        TimedWord("at", 4_000_000, 4_100_000),
+        TimedWord("last", 4_110_000, 4_300_000),
+        TimedWord("the", 4_310_000, 4_400_000),
+        TimedWord("traveler", 4_410_000, 4_700_000),
+        TimedWord("reaches", 4_710_000, 4_900_000),
+        TimedWord("the", 4_910_000, 5_000_000),
+        TimedWord("old", 5_010_000, 5_150_000),
+        TimedWord("bridge", 5_160_000, 5_400_000),
+    ]
+
+    aligned = align_transcript_lines(lines, recognized, 6_000_000)
+
+    assert 1_200_000 < aligned[0].end_us < 2_000_000
+    assert 3_200_000 < aligned[1].end_us < 4_000_000
+    assert aligned[2].end_us == 6_000_000
+
+
+def test_alignment_rejects_unmatched_shot_instead_of_guessing_by_word_ratio() -> None:
+    with pytest.raises(TranscriptionError, match="Shot 02"):
+        align_transcript_lines(
+            ["The opening scene is clear.", "A completely different sentence."],
+            [
+                TimedWord("the", 100_000, 200_000),
+                TimedWord("opening", 210_000, 400_000),
+                TimedWord("scene", 410_000, 600_000),
+                TimedWord("is", 610_000, 700_000),
+                TimedWord("clear", 710_000, 900_000),
+                TimedWord("unrelated", 2_000_000, 2_300_000),
+            ],
+            3_000_000,
+        )
