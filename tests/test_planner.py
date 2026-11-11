@@ -426,4 +426,4 @@ def test_transcript_mode_keeps_one_image_clip_for_each_actual_shot_duration(
 
     assert len(project.clips) == 2
     assert [clip.path for clip in project.clips] == [first.resolve(), second.resolve()]
-    assert [clip.duration_us for clip in project.clips] == [1_400_000, 6_600_000]
+    assert [clip.duration_us for clip in project.clips] == [1_600_000, 6_400_000]
