@@ -391,3 +391,39 @@ def test_partial_timestamp_mapping_is_rejected(tmp_path: Path) -> None:
             mapping_path=mapping,
             probe=FakeProbe({"narration.wav": 5}),
         )
+
+
+
+def test_transcript_mode_keeps_one_image_clip_for_each_actual_shot_duration(
+    tmp_path: Path,
+) -> None:
+    audio = touch(tmp_path / "audio.wav")
+    media = tmp_path / "media"
+    media.mkdir()
+    first = touch(media / "img-001.png")
+    second = touch(media / "img-002.png")
+    transcript = tmp_path / "transcript.txt"
+    transcript.write_text("First shot words.\\n\\nSecond shot words.", encoding="utf-8")
+    transcriber = FakeTranscriber([
+        TimedWord("first", 100_000, 300_000),
+        TimedWord("shot", 310_000, 500_000),
+        TimedWord("words", 510_000, 800_000),
+        TimedWord("second", 2_000_000, 2_300_000),
+        TimedWord("shot", 2_310_000, 2_500_000),
+        TimedWord("words", 2_510_000, 2_800_000),
+    ])
+
+    project = build_timeline(
+        project_name="transcript-shot-duration",
+        audio_path=audio,
+        media_dir=media,
+        alignment_mode=AlignmentMode.TRANSCRIPT,
+        transcript_path=transcript,
+        transcriber=transcriber,
+        config=PlannerConfig(image_shot_duration_us=seconds_to_us(6)),
+        probe=FakeProbe({"audio.wav": 8}),
+    )
+
+    assert len(project.clips) == 2
+    assert [clip.path for clip in project.clips] == [first.resolve(), second.resolve()]
+    assert [clip.duration_us for clip in project.clips] == [1_400_000, 6_600_000]
