@@ -1,6 +1,9 @@
 name: Build Windows full installer
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - fix/windows-full-whisper-build
