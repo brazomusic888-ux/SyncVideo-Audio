@@ -136,3 +136,33 @@ def test_aligns_japanese_characters_when_whisper_returns_phrase_chunks() -> None
     )
     assert aligned[0].end_us == 1_200_000
     assert aligned[1].end_us == 2_500_000
+
+
+def test_txt_paragraphs_map_one_to_one_to_media_without_sentence_splitting(tmp_path: Path) -> None:
+    transcript = tmp_path / "shots.txt"
+    transcript.write_text(
+        "Shot one has two sentences. It stays together.\n\n"
+        "Shot two also has two. Still one paragraph.\n\n"
+        "Shot three ends here!",
+        encoding="utf-8",
+    )
+
+    assert load_transcript(transcript, expected_count=3) == [
+        "Shot one has two sentences. It stays together.",
+        "Shot two also has two. Still one paragraph.",
+        "Shot three ends here!",
+    ]
+
+
+def test_txt_paragraph_mapping_falls_back_when_count_does_not_match(tmp_path: Path) -> None:
+    transcript = tmp_path / "shots.txt"
+    transcript.write_text(
+        "First sentence. Second sentence.\n\nThird sentence.",
+        encoding="utf-8",
+    )
+
+    assert load_transcript(transcript, expected_count=3) == [
+        "First sentence.",
+        "Second sentence.",
+        "Third sentence.",
+    ]
