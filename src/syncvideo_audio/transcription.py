@@ -280,8 +280,8 @@ def split_transcript_paragraphs(text: str) -> list[str]:
     """Split TXT into blank-line-delimited paragraphs, preserving inner sentences."""
 
     paragraphs = [
-        re.sub(r"\\s+", " ", block).strip()
-        for block in re.split(r"\\r?\\n(?:[ \\t]*\\r?\\n)+", text.strip())
+        re.sub(r"\s+", " ", block).strip()
+        for block in re.split(r"\r?\n(?:[ \t]*\r?\n)+", text.strip())
     ]
     return [paragraph for paragraph in paragraphs if paragraph]
 
