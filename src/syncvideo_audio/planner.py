@@ -261,7 +261,7 @@ def build_timeline(
             if transcript_path is None and not transcript_text:
                 raise ValueError("transcript mode requires a transcript file or pasted text")
             transcript_lines = (
-                load_transcript(transcript_path)
+                load_transcript(transcript_path, expected_count=len(media))
                 if transcript_path is not None
                 else split_transcript_sentences(transcript_text or "")
             )
