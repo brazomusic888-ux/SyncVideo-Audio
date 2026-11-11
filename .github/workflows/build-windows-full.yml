@@ -1,0 +1,96 @@
+name: Build Windows full installer
+
+on:
+  push:
+    branches:
+      - fix/windows-full-whisper-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-full:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install application and build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[transcribe,dev]" pyinstaller
+
+      - name: Download multilingual Whisper small model
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "assets/models/small" | Out-Null
+          python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Systran/faster-whisper-small', local_dir='assets/models/small', allow_patterns=['config.json','model.bin','tokenizer.json','vocabulary.*','preprocessor_config.json'])"
+          if (-not (Test-Path "assets/models/small/model.bin")) { throw "Whisper model.bin was not downloaded." }
+          if (-not (Test-Path "assets/models/small/config.json")) { throw "Whisper config.json was not downloaded." }
+
+      - name: Download FFmpeg and FFprobe
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "ffmpeg-essentials.zip"
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $archive
+          $extract = Join-Path $env:RUNNER_TEMP "ffmpeg-extracted"
+          Expand-Archive -Path $archive -DestinationPath $extract -Force
+          $ffmpeg = Get-ChildItem -Path $extract -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+          $ffprobe = Get-ChildItem -Path $extract -Filter "ffprobe.exe" -Recurse | Select-Object -First 1
+          if (-not $ffmpeg -or -not $ffprobe) { throw "FFmpeg/FFprobe binaries were not found in the downloaded archive." }
+          New-Item -ItemType Directory -Force -Path "assets/tools" | Out-Null
+          Copy-Item $ffmpeg.FullName "assets/tools/ffmpeg.exe" -Force
+          Copy-Item $ffprobe.FullName "assets/tools/ffprobe.exe" -Force
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6"
+          if (-not (Test-Path (Join-Path $iscc "ISCC.exe"))) { throw "Inno Setup compiler was not installed." }
+          $iscc | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          python -m pytest
+          python -m compileall -q src
+
+      - name: Build full Windows application and installer
+        shell: pwsh
+        run: |
+          ./packaging/build_full.ps1
+          if (-not (Test-Path "dist-full/SyncVideo-Audio/SyncVideo-Audio.exe")) { throw "Application EXE was not produced." }
+          $installer = Get-ChildItem "dist-installer" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer EXE was not produced." }
+
+      - name: Create SHA256 checksums
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem "dist-installer" -File
+            Get-ChildItem "dist-full/SyncVideo-Audio/SyncVideo-Audio.exe" -File
+          )
+          $files | Get-FileHash -Algorithm SHA256 | ForEach-Object {
+            "$($_.Hash)  $($_.Path)"
+          } | Set-Content "SHA256SUMS.txt"
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SyncVideo-Audio-Windows-full
+          path: |
+            dist-installer/*
+            dist-full/SyncVideo-Audio/SyncVideo-Audio.exe
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
