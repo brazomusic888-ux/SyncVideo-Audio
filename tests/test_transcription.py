@@ -141,8 +141,8 @@ def test_aligns_japanese_characters_when_whisper_returns_phrase_chunks() -> None
 def test_txt_paragraphs_map_one_to_one_to_media_without_sentence_splitting(tmp_path: Path) -> None:
     transcript = tmp_path / "shots.txt"
     transcript.write_text(
-        "Shot one has two sentences. It stays together.\\n\\n"
-        "Shot two also has two. Still one paragraph.\\n\\n"
+        "Shot one has two sentences. It stays together.\n\n"
+        "Shot two also has two. Still one paragraph.\n\n"
         "Shot three ends here!",
         encoding="utf-8",
     )
@@ -157,7 +157,7 @@ def test_txt_paragraphs_map_one_to_one_to_media_without_sentence_splitting(tmp_p
 def test_txt_paragraph_mapping_falls_back_when_count_does_not_match(tmp_path: Path) -> None:
     transcript = tmp_path / "shots.txt"
     transcript.write_text(
-        "First sentence. Second sentence.\\n\\nThird sentence.",
+        "First sentence. Second sentence.\n\nThird sentence.",
         encoding="utf-8",
     )
 
