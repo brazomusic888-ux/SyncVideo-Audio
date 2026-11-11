@@ -334,40 +334,57 @@ def align_transcript_lines(
     if not words:
         raise TranscriptionError("Whisper word timestamps are empty")
 
-    reference_tokens: list[str] = []
-    reference_boundaries = [0]
-    for line in lines:
-        tokens = _tokens(line)
-        if not tokens:
-            raise ValueError(f"transcript line không có từ hợp lệ: {line!r}")
-        reference_tokens.extend(tokens)
-        reference_boundaries.append(len(reference_tokens))
-
     recognized_tokens: list[str] = []
     token_times: list[tuple[int, int]] = []
     for word in words:
-        tokens = _tokens(word.text)
-        for token in tokens:
+        for token in _tokens(word.text):
             recognized_tokens.append(token)
             token_times.append((word.start_us, word.end_us))
     if not recognized_tokens:
         raise TranscriptionError("Whisper timestamps không chứa token hợp lệ")
-    if len(lines) > 1 and len(recognized_tokens) < 2:
-        raise TranscriptionError(
-            "Whisper không đủ timestamp để chia transcript thành nhiều cảnh"
-        )
 
-    token_mapping = _matching_token_map(reference_tokens, recognized_tokens)
+    # Match each Shot against the remaining Whisper transcript in order. This
+    # prevents a weak/missing match in an early Shot from shifting every later
+    # boundary through a proportional word-count fallback.
+    matched_spans: list[tuple[int, int]] = []
+    cursor = 0
+    for line_index, line in enumerate(lines, 1):
+        reference_tokens = _tokens(line)
+        if not reference_tokens:
+            raise ValueError(f"transcript line không có từ hợp lệ: {line!r}")
+        matcher = SequenceMatcher(
+            a=reference_tokens,
+            b=recognized_tokens[cursor:],
+            autojunk=False,
+        )
+        matched_indices = [
+            cursor + block.b + offset
+            for block in matcher.get_matching_blocks()
+            if block.size
+            for offset in range(block.size)
+        ]
+        matched_count = sum(
+            block.size for block in matcher.get_matching_blocks() if block.size
+        )
+        minimum_matches = 1 if len(reference_tokens) == 1 else 2
+        coverage = matched_count / len(reference_tokens)
+        if matched_count < minimum_matches or coverage < 0.35:
+            raise TranscriptionError(
+                f"Không thể căn chỉnh chắc chắn Shot {line_index:02d} "
+                f"(khớp {matched_count}/{len(reference_tokens)} từ). "
+                "Hãy kiểm tra đoạn TXT và lời đọc tại Shot này."
+            )
+        first_index = min(matched_indices)
+        last_index = max(matched_indices)
+        matched_spans.append((first_index, last_index))
+        cursor = last_index + 1
+
     boundaries = [0]
     line_count = len(lines)
-    for line_index, reference_boundary in enumerate(reference_boundaries[1:-1], 1):
-        recognized_boundary = _recognized_boundary(
-            reference_boundary,
-            len(reference_tokens),
-            len(recognized_tokens),
-            token_mapping,
-        )
-        timestamp = _boundary_timestamp(recognized_boundary, token_times)
+    for line_index in range(1, line_count):
+        previous_end = token_times[matched_spans[line_index - 1][1]][1]
+        next_start = token_times[matched_spans[line_index][0]][0]
+        timestamp = round((previous_end + next_start) / 2)
         minimum = boundaries[-1] + 1
         maximum = audio_duration_us - (line_count - line_index)
         boundaries.append(max(minimum, min(timestamp, maximum)))
@@ -401,38 +418,6 @@ def _words_from_whisper(payload: Any) -> list[TimedWord]:
             if end > start:
                 output.append(TimedWord(str(segment["text"]).strip(), start, end))
     return sorted(output, key=lambda word: (word.start_us, word.end_us))
-
-
-def _matching_token_map(reference: Sequence[str], recognized: Sequence[str]) -> dict[int, int]:
-    mapping: dict[int, int] = {}
-    matcher = SequenceMatcher(a=reference, b=recognized, autojunk=False)
-    for block in matcher.get_matching_blocks():
-        for offset in range(block.size):
-            mapping[block.a + offset] = block.b + offset
-    return mapping
-
-
-def _recognized_boundary(
-    reference_boundary: int,
-    reference_count: int,
-    recognized_count: int,
-    mapping: dict[int, int],
-) -> int:
-    previous = [(ref, rec) for ref, rec in mapping.items() if ref < reference_boundary]
-    following = [(ref, rec) for ref, rec in mapping.items() if ref >= reference_boundary]
-    if previous and following:
-        left_recognized = max(previous)[1] + 1
-        right_recognized = min(following)[1]
-        boundary = round((left_recognized + right_recognized) / 2)
-    else:
-        boundary = round(recognized_count * reference_boundary / reference_count)
-    return max(1, min(boundary, recognized_count - 1))
-
-
-def _boundary_timestamp(boundary: int, token_times: Sequence[tuple[int, int]]) -> int:
-    before_end = token_times[boundary - 1][1]
-    after_start = token_times[boundary][0]
-    return round((before_end + after_start) / 2)
 
 
 def _tokens(text: str) -> list[str]:
