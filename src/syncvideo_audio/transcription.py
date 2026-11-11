@@ -248,8 +248,17 @@ class WhisperCliTranscriber:
         return words
 
 
-def load_transcript(path: str | Path) -> list[str]:
-    """Load TXT, SRT, or JSON and split scenes only at sentence punctuation."""
+def load_transcript(
+    path: str | Path,
+    *,
+    expected_count: int | None = None,
+) -> list[str]:
+    """Load TXT, SRT, or JSON; preserve TXT paragraphs when they map 1:1 to media.
+
+    A blank-line-delimited TXT paragraph is treated as one scene only when the
+    caller supplies an expected media count and the paragraph count matches it.
+    Otherwise the legacy sentence-splitting behavior is retained.
+    """
 
     source = Path(path)
     if not source.is_file():
@@ -260,7 +269,21 @@ def load_transcript(path: str | Path) -> list[str]:
         text = " ".join(_json_transcript_texts(json.loads(text)))
     elif suffix == ".srt":
         text = _srt_transcript_text(text)
+    elif suffix == ".txt" and expected_count is not None:
+        paragraphs = split_transcript_paragraphs(text)
+        if len(paragraphs) == expected_count:
+            return paragraphs
     return split_transcript_sentences(text)
+
+
+def split_transcript_paragraphs(text: str) -> list[str]:
+    """Split TXT into blank-line-delimited paragraphs, preserving inner sentences."""
+
+    paragraphs = [
+        re.sub(r"\\s+", " ", block).strip()
+        for block in re.split(r"\\r?\\n(?:[ \\t]*\\r?\\n)+", text.strip())
+    ]
+    return [paragraph for paragraph in paragraphs if paragraph]
 
 
 def split_transcript_sentences(text: str) -> list[str]:
