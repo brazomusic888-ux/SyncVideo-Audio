@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
 hiddenimports = []
+binaries = []
 datas = [
     ("../assets/logo.png", "assets"),
     ("../assets/logo-64.png", "assets"),
@@ -16,10 +18,25 @@ datas = [
     ("licenses/FFmpeg-NOTICE.txt", "licenses"),
     ("licenses/WHISPER-MODEL-NOTICE.txt", "licenses"),
 ]
+
+# faster-whisper loads CTranslate2, tokenizers and PyAV at runtime. Collect
+# package data, native DLLs and hidden imports so the frozen GUI can load them.
+for package in (
+    "faster_whisper",
+    "ctranslate2",
+    "tokenizers",
+    "av",
+    "huggingface_hub",
+):
+    package_datas, package_binaries, package_hiddenimports = collect_all(package)
+    datas += package_datas
+    binaries += package_binaries
+    hiddenimports += package_hiddenimports
+
 a = Analysis(
     ["gui_launcher.py"],
     pathex=["../src"],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -38,7 +55,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -52,7 +69,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="SyncVideo-Audio",
 )
