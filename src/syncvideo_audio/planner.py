@@ -302,7 +302,12 @@ def build_timeline(
     for scene in scenes:
         suffix = scene.path.suffix.lower()
         if suffix in IMAGE_EXTENSIONS:
-            image_clips = _plan_image(scene, cfg, motion_index)
+            image_clips = _plan_image(
+                scene,
+                cfg,
+                motion_index,
+                split_long_stills=mode is not AlignmentMode.TRANSCRIPT,
+            )
             clips.extend(image_clips)
             motion_index += len(image_clips)
         elif suffix in VIDEO_EXTENSIONS:
@@ -352,8 +357,18 @@ def _validate_ordered_media(
     return media
 
 
-def _plan_image(scene: SceneSpec, config: PlannerConfig, motion_index: int) -> list[TimelineClip]:
-    shot_count = max(1, round(scene.duration_us / config.image_shot_duration_us))
+def _plan_image(
+    scene: SceneSpec,
+    config: PlannerConfig,
+    motion_index: int,
+    *,
+    split_long_stills: bool = True,
+) -> list[TimelineClip]:
+    shot_count = (
+        max(1, round(scene.duration_us / config.image_shot_duration_us))
+        if split_long_stills
+        else 1
+    )
     ranges = _equal_ranges(scene.start_us, scene.duration_us, shot_count)
     return [
         TimelineClip(
